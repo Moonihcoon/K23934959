@@ -293,7 +293,7 @@ details{margin-top:8px}summary{cursor:pointer;color:var(--accent)}
 <div class="card">
 <div class="ix-bar">
 <label>지수<select id="ix-mkt" aria-label="지수 선택"><option value="k">코스피</option><option value="q">코스닥</option></select></label>
-<div class="ix-seg" role="group" aria-label="차트 종류"><button type="button" data-ik="d" aria-pressed="true">일봉</button><button type="button" data-ik="min" aria-pressed="false">분봉</button><button type="button" data-ik="m" aria-pressed="false">월봉</button></div>
+<div class="ix-seg" role="group" aria-label="차트 종류"><button type="button" data-ik="min" aria-pressed="false">분봉</button><button type="button" data-ik="d" aria-pressed="true">일봉</button><button type="button" data-ik="w" aria-pressed="false">주봉</button><button type="button" data-ik="m" aria-pressed="false">월봉</button></div>
 <label id="ix-mintw" hidden>분봉 간격<select id="ix-mint" aria-label="분봉 간격"><option value="1">1분</option><option value="3">3분</option><option value="5" selected>5분</option><option value="10">10분</option><option value="30">30분</option><option value="60">60분</option></select></label>
 <label>시작일<input type="date" id="ix-from" aria-label="시작일" min="2016-01-01"></label>
 <label>종료일<input type="date" id="ix-to" aria-label="종료일" min="2016-01-01"></label>
@@ -344,9 +344,12 @@ function drawChart(box,rows,opt={}){
     [30,70].forEach(v=>{mk('line',{class:'gl',x1:L,x2:W-R,y1:YR(v),y2:YR(v),'stroke-dasharray':'3 3'});mk('text',{x:L-6,y:YR(v)+4,'text-anchor':'end'},v)});
     mk('line',{class:'gl',x1:L,x2:W-R,y1:YR(0),y2:YR(0)});mk('line',{class:'gl',x1:L,x2:W-R,y1:YR(100),y2:YR(100)});
     mk('text',{x:L+4,y:R0+12,style:'fill:var(--ink-3);font-weight:600'},'RSI(14)');
-    let d='',on=false;RS.forEach((v,i)=>{if(v==null){on=false;return}d+=(on?'L':'M')+X(i).toFixed(1)+' '+YR(v).toFixed(1);on=true});
-    mk('path',{d,fill:'none',stroke:'var(--accent)','stroke-width':1.5});
-    const lv0=RS.length?RS[RS.length-1]:null;if(lv0!=null)lab(W-R-4,R0+12,'RSI '+lv0.toFixed(1),'var(--accent)','end')}
+    /* 구간별 색: 70 이상 빨강 · 60~69 주황 · 30 이하 초록 · 그 외 기본색 */
+    const rc=v=>v>=70?'#e03131':v>=60?'#f08c00':v<=30?'#2f9e44':'var(--accent)';
+    const seg={};RS.forEach((v,i)=>{if(v==null||i===0||RS[i-1]==null)return;const c=rc(v);
+      seg[c]=(seg[c]||'')+'M'+X(i-1).toFixed(1)+' '+YR(RS[i-1]).toFixed(1)+'L'+X(i).toFixed(1)+' '+YR(v).toFixed(1)});
+    Object.keys(seg).forEach(c=>mk('path',{d:seg[c],fill:'none',stroke:c,'stroke-width':1.6,'stroke-linecap':'round','stroke-linejoin':'round'}));
+    const lv0=RS.length?RS[RS.length-1]:null;if(lv0!=null)lab(W-R-4,R0+12,'RSI '+lv0.toFixed(1),rc(lv0),'end')}
   (opt.marks||[]).forEach((mm,mi)=>{const i=rows.findIndex(r=>r[0]===mm.di);if(i<0)return;
     mk('line',{x1:X(i),x2:X(i),y1:T,y2:BH,stroke:'var(--mark)','stroke-width':1.2,'stroke-dasharray':'4 3'});
     mk('text',{x:Math.min(W-R-4,X(i)+4),y:T+10+13*mi,style:'fill:var(--mark);font-weight:600','text-anchor':X(i)>W-80?'end':'start'},mm.t)});
@@ -931,19 +934,21 @@ async function paint(){
     if(f>t)return show('시작일이 종료일보다 늦습니다.');
     const days=DAILY[key];
     let rows,cl,vals,xl,tl,vk='a',unitMsg,notes=[];
-    if(ST.kind==='d'||ST.kind==='m'){
-      let arr=days.map(r=>({d:r[0],o:r[1],h:r[2],l:r[3],c:r[4],v:r[5]}));
-      if(ST.kind==='m'){const g=new Map();arr.forEach(r=>{const k=Math.floor(r.d/100);const a=g.get(k);
-        if(!a)g.set(k,{d:k,o:r.o,h:r.h,l:r.l,c:r.c,v:r.v});else{a.h=Math.max(a.h,r.h);a.l=Math.min(a.l,r.l);a.c=r.c;a.v+=r.v}});arr=[...g.values()]}
+    if(ST.kind!=='min'){
+      const dk=ST.kind;
+      let arr=days.map(r=>({d0:r[0],d:r[0],o:r[1],h:r[2],l:r[3],c:r[4],v:r[5]}));
+      if(dk!=='d'){const g=new Map();
+        const wk=n=>{const y=Math.floor(n/10000),m=Math.floor(n/100)%100-1,dd=n%100,t=new Date(y,m,dd);t.setDate(t.getDate()-((t.getDay()+6)%7));return t.getFullYear()*10000+(t.getMonth()+1)*100+t.getDate()};
+        arr.forEach(r=>{const k=dk==='m'?Math.floor(r.d/100):wk(r.d);const a=g.get(k);
+          if(!a)g.set(k,{d0:r.d,d:r.d,o:r.o,h:r.h,l:r.l,c:r.c,v:r.v});else{a.h=Math.max(a.h,r.h);a.l=Math.min(a.l,r.l);a.c=r.c;a.v+=r.v;a.d=r.d}});arr=[...g.values()]}
       const rs=rsi(arr.map(r=>r.c));
-      const f0=ST.kind==='m'?+f.slice(0,4)*100+ +f.slice(5,7):+f.replace(/-/g,''),t0=ST.kind==='m'?+t.slice(0,4)*100+ +t.slice(5,7):+t.replace(/-/g,'');
-      const idx=[];arr.forEach((r,i)=>{if(r.d>=f0&&r.d<=t0)idx.push(i)});
+      const f0=+f.replace(/-/g,''),t0=+t.replace(/-/g,'');
+      const idx=[];arr.forEach((r,i)=>{if(r.d>=f0&&r.d0<=t0)idx.push(i)});
       if(!idx.length)return show('이 기간에는 자료가 없습니다.');
       const sel=idx.map(i=>arr[i]);
       rows=sel.map((r,i)=>[i,r.o,r.h,r.l,r.c,r.v]);cl=idx.map(i=>rs[i]);
-      const mon=ST.kind==='m';
-      xl=r=>{const s=String(sel[r[0]].d);return mon?s.slice(2,4)+'.'+s.slice(4,6):s.slice(2,4)+'.'+s.slice(4,6)+'.'+s.slice(6,8)};
-      tl=r=>{const s=String(sel[r[0]].d);return mon?s.slice(0,4)+'-'+s.slice(4,6):iso(sel[r[0]].d)};
+      xl=r=>{const s=String(sel[r[0]].d0);return dk==='m'?s.slice(2,4)+'.'+s.slice(4,6):s.slice(2,4)+'.'+s.slice(4,6)+'.'+s.slice(6,8)};
+      tl=r=>{const q=sel[r[0]],s=String(q.d0);return dk==='m'?s.slice(0,4)+'-'+s.slice(4,6):dk==='w'?iso(q.d0)+' ~ '+iso(q.d).slice(5)+' 주':iso(q.d0)};
     }else{
       const all=(META.minute_days||[]).filter(d=>d>=f&&d<=t);
       if(!all.length)return show(META.minute_days&&META.minute_days.length?`이 기간에는 분봉이 없습니다. 분봉은 ${META.minute_days[0]} ~ ${META.minute_days[META.minute_days.length-1]} 사이만 있습니다.`:'분봉 자료가 아직 없습니다.');
@@ -963,7 +968,7 @@ async function paint(){
     if(vk==='a'){U=moneyUnit(vmax);label='거래대금'}else{U=shareUnit(vmax);label='거래량'}
     rows.forEach(r=>{r[5]=r[5]/U[2]});
     const first=rows[0][4],lastd=rows[rows.length-1];
-    E('info').textContent=`${nm} ${ST.kind==='d'?'일봉':ST.kind==='m'?'월봉':E('mint').value+'분봉'} · ${rows.length.toLocaleString('ko-KR')}개 · 아래 막대: ${label}(${U[0]}), 그 아래: RSI(14)`+(notes.length?' · '+notes.join(' '):'');
+    E('info').textContent=`${nm} ${({d:'일봉',w:'주봉',m:'월봉'})[ST.kind]||E('mint').value+'분봉'} · ${rows.length.toLocaleString('ko-KR')}개 · 아래 막대: ${label}(${U[0]}), 그 아래: RSI(14)`+(notes.length?' · '+notes.join(' '):'');
     mountChart(host,rows,{key:`ix|${key}|${ST.kind}|${E('mint').value}|${f}|${t}`,xl,tl,vu:U[1],vf:vfm,vl:label,pf:px,rsi:cl,
       ref:{p:first,t:'기간 시작 종가 대비'},label:nm+' 지수 차트'});
   }catch(e){show('지수 자료를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.')}
